@@ -21,10 +21,9 @@ static const char* PMK_KEY = ESP_NOW_PMK_KEY;
 static const char* LMK_KEY = ESP_NOW_LMK_KEY;
 
 typedef struct struct_message {
-  int tickcount;
-  int var1;
-  int var2;
-  byte signature[4];
+  TickType tickcount;
+  byte data[MSG_DATA_LEN];
+  byte signature[MSG_SIGNATURE_LEN];
 } struct_message;
 
 struct_message messageBuff;
@@ -40,15 +39,15 @@ void CheckSerial()
     Serial.println(incomingByte, DEC);
 
     if(incomingByte == 49){
-      messageBuff.var1 = 1;
-      messageBuff.var2 = 1;
-      if(sendMessage(peerAddress, messageBuff, sizeof(messageBuff)) == E_OK)
+      messageBuff.data[0] = 1;
+      messageBuff.data[1] = 1;
+      if(SendMessage(peerAddress, messageBuff, sizeof(messageBuff)) == E_OK)
         Serial.println("LEDON Sent");
     }
     else if (incomingByte == 50){
-      messageBuff.var1 = 1;
-      messageBuff.var2 = 2;
-      if(sendMessage(peerAddress, messageBuff, sizeof(messageBuff)) == E_OK)
+      messageBuff.data[0] = 1;
+      messageBuff.data[1] = 2;
+      if(SendMessage(peerAddress, messageBuff, sizeof(messageBuff)) == E_OK)
         Serial.println("LEDOFF Sent");
     }
   }
@@ -66,7 +65,7 @@ void OnDataReceive(const uint8_t * mac_addr, const uint8_t *incomingData, int le
 {
   Serial.print("\nPacket received");
   memcpy(&messageBuff, incomingData, sizeof(messageBuff));
-  if(messageBuff.var1 == messageBuff.var2){
+  if(messageBuff.data[0] == messageBuff.data[1]){
     digitalWrite(LED_TEST, HIGH);
   }
   else{
@@ -74,21 +73,38 @@ void OnDataReceive(const uint8_t * mac_addr, const uint8_t *incomingData, int le
   }
 }
 
-E_Return sendMessage(uint8_t* destAddress, struct_message msg, uint8_t size)
+E_Return SendMessage(uint8_t* destAddress, struct_message msg, uint8_t size)
 {
-  int retVal = E_NOT_OK;
+  E_Return retval = E_OK;
 
-  msg.tickcount = millis()%1000;
-  // MAC Generate over data
+  byte macResult[MSG_SIGNATURE_LEN];
+  
+  SetTickcount(&msg.tickcount);
 
-  if(esp_now_send(destAddress, (uint8_t *) &msg, size)){
-    return retVal = E_OK;
+  if(E_OK == MacGen(msg, macResult))
+  {
+    Serial.println("\nCalculated MAC: ");
+    for(int i = 0; i < MSG_SIGNATURE_LEN; i++)
+    {
+      msg.signature[i] = macResult[i];
+      Serial.print(macResult[i]);
+    }
+    Serial.print('\n');
+  }
+  else
+  {
+    return E_NOT_OK;
   }
 
-  return retVal; 
+  if(!esp_now_send(destAddress, (uint8_t *) &msg, size))
+  {
+    retval = E_NOT_OK;
+  }
+
+  return retval; 
 }
 
-E_Return setupEspNow()
+E_Return SetupEspNow()
 {
   // ESP Connection
   if(esp_now_init() != ESP_OK){
@@ -117,7 +133,7 @@ E_Return setupEspNow()
 
 // WiFi functions
 
-void get_network_info(WiFiEvent_t wifi_event, WiFiEventInfo_t wifi_info)
+void GetNetworkInfo(WiFiEvent_t wifi_event, WiFiEventInfo_t wifi_info)
 {
     if(WiFi.status() == WL_CONNECTED) {
         Serial.println("\nConnected to the WiFi network");
@@ -137,16 +153,16 @@ void get_network_info(WiFiEvent_t wifi_event, WiFiEventInfo_t wifi_info)
     }
 }
 
-void disconnect_event(WiFiEvent_t wifi_event, WiFiEventInfo_t wifi_info)
+void DisconnectEvent(WiFiEvent_t wifi_event, WiFiEventInfo_t wifi_info)
 {
   Serial.println("\nDisconnected from the WiFi Network");
   WiFi.begin(ssid, password);
 }
 
-void setupWiFi()
+void SetupWiFi()
 {
-  WiFi.onEvent(get_network_info, ARDUINO_EVENT_WIFI_STA_GOT_IP);
-  WiFi.onEvent(disconnect_event, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  WiFi.onEvent(GetNetworkInfo, ARDUINO_EVENT_WIFI_STA_GOT_IP);
+  WiFi.onEvent(DisconnectEvent, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WiFi.begin(ssid, password);
   Serial.println("\nConnecting to Wifi");
   while(WiFi.status() != WL_CONNECTED){
@@ -162,11 +178,39 @@ void setupWiFi()
 
 // Crypto Functions
 
-E_Return setupCrypto()
+E_Return SetTickcount(TickType *outputPointer)
+{
+  E_Return retval = E_OK;
+
+  *outputPointer = 12;//millis()%1000;
+
+  return retval;
+}
+
+E_Return SetupCrypto()
 {
   int retVal = E_OK;
 
   return retVal;
+}
+
+E_Return MacGen(struct_message msg, byte *outputPointer)
+{
+  E_Return retval = E_OK;
+
+  byte macInputLen = MSG_DATA_LEN + sizeof(TickType);
+  byte macInput[macInputLen];
+
+  for(int i = 0; i < MSG_DATA_LEN; i++)
+  {
+    macInput[i] = msg.data[i];
+  }
+  macInput[MSG_DATA_LEN] = msg.tickcount;
+  const byte macKey[MAC_KEY_LEN] = {MAC_ENCR_KEY};
+  
+  spritz_mac(outputPointer, MSG_SIGNATURE_LEN, macInput, macInputLen, macKey, MAC_KEY_LEN);
+  
+  return retval;
 }
 
 // setup() function -- runs once at startup --------------------------------
@@ -178,14 +222,14 @@ void setup()
   digitalWrite(LED_TEST, LOW);
 
   // Crypto
-  setupCrypto();
+  SetupCrypto();
 
   // WIFI Connection
   WiFi.mode(WIFI_STA); //Optional
-  //setupWiFi();
+  //SetupWiFi();
 
   // ESP Now
-  if(setupEspNow() == E_NOT_OK){
+  if(SetupEspNow() == E_NOT_OK){
     return;
   }
 }

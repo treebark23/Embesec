@@ -6,14 +6,27 @@
 #define E_OK 0
 #define E_NOT_OK 1
 
+/// Typedef
+
 typedef uint8_t E_Return;
+typedef uint32_t TickType;
+
+/// Crypto Settings
+
+#define MAC_RESULT_LEN 16
+
+/// PDU Settings
+
+#define MSG_DATA_LEN 16
+#define MSG_SIGNATURE_LEN 8
 
 /// Symmetric Keys:
 
 #define ESP_NOW_PMK_KEY "SomeExample@K3y"
 #define ESP_NOW_LMK_KEY "OtherExample@K3y"
 
-#define MAC_ENCR_KEY "AndAnother@n3"
+#define MAC_ENCR_KEY 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+#define MAC_KEY_LEN 8
 
 /// ESP WiFi Settings
 
